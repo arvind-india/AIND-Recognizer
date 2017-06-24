@@ -74,10 +74,25 @@ class SelectorBIC(ModelSelector):
 
         :return: GaussianHMM object
         """
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        try:
+            best_bic, best_model = None, None
+            for num_components in range(self.min_n_components, self.max_n_components + 1):
+                model = self.base_model(num_components)  # type: GaussianHMM
+                log_likelihood = model.score(self.X, self.lengths)
 
-        # TODO implement model selection based on BIC scores
-        raise NotImplementedError
+                # Number of parameters
+                # https://rdrr.io/cran/HMMpa/man/AIC_HMM.html
+                p = num_components**2 * num_components*2 - 1
+                # The four here is constant for all models, so can be ignored.
+
+                bic = -2 * log_likelihood + p * np.log(len(self.X))
+                # Occam's razor: We try smaller models first and check for a
+                # strictly smaller BIC, this will prefer smaller models in case of a draw.
+                if best_bic is None or best_bic < bic:
+                    best_bic, best_model = bic, model
+            return best_model
+        except:
+            return self.base_model(self.n_constant)
 
 
 class SelectorDIC(ModelSelector):
@@ -90,10 +105,24 @@ class SelectorDIC(ModelSelector):
     '''
 
     def select(self):
-        warnings.filterwarnings("ignore", category=DeprecationWarning)
+        try:
+            best_dic, best_model = None, None
+            for num_components in range(self.min_n_components, self.max_n_components + 1):
+                model = self.base_model(num_components)  # type: GaussianHMM
 
-        # TODO implement model selection based on DIC scores
-        raise NotImplementedError
+                log_likelihood = model.score(self.X, self.lengths)
+                log_likelihoods = [model.score(X, lengths)
+                                   for word, (X, lengths)
+                                   in self.hwords.items()
+                                   if word != self.this_word]
+
+                dic = log_likelihood - np.sum(log_likelihoods) / (len(log_likelihoods) - 1)
+
+                if best_dic is None or best_dic < dic:
+                    best_dic, best_model = dic, model
+            return best_model
+        except:
+            return self.base_model(self.n_constant)
 
 
 class SelectorCV(ModelSelector):
@@ -104,5 +133,24 @@ class SelectorCV(ModelSelector):
     def select(self):
         warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-        # TODO implement model selection using CV
-        raise NotImplementedError
+        try:
+            highest_log_likelihood, best_p = None, None
+
+            split_method = KFold(min(3, len(self.sequences)))
+            for p in range(self.min_n_components, self.max_n_components + 1):
+                log_likelihoods = []
+
+                for cv_train_idx, cv_test_idx in split_method.split(self.sequences):
+                    self.X, self.lengths = combine_sequences(cv_train_idx, self.sequences)
+                    model = self.base_model(p)  # type: GaussianHMM
+
+                    X, lengths = combine_sequences(cv_test_idx, self.sequences)
+                    log_likelihoods.append(model.score(X, lengths))
+
+                log_likelihood = np.mean(log_likelihoods)
+                if highest_log_likelihood is None or log_likelihood > highest_log_likelihood:
+                    highest_log_likelihood, best_p = log_likelihood, p
+
+            return self.base_model(best_p)
+        except:
+            return self.base_model(self.n_constant)
