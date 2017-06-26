@@ -75,20 +75,44 @@ class SelectorBIC(ModelSelector):
         :return: GaussianHMM object
         """
         try:
-            best_bic, best_model = float("-inf"), 1
+            best_bic, best_model = float("inf"), 1
             for num_components in range(self.min_n_components, self.max_n_components + 1):
                 model = self.base_model(num_components)  # type: GaussianHMM
                 log_likelihood = model.score(self.X, self.lengths)
 
                 # Number of parameters
-                # https://rdrr.io/cran/HMMpa/man/AIC_HMM.html
-                p = num_components**2 * num_components*2 - 1
-                # The four here is constant for all models, so can be ignored.
+                # https://discussions.udacity.com/t/number-of-parameters-bic-calculation/233235/8?u=markus-131
+                # https://discussions.udacity.com/t/number-of-parameters-bic-calculation/233235/12?u=markus-131
+                num_samples, num_features = self.X.shape
 
-                bic = -2 * log_likelihood + p * np.log(len(self.X))
+                # The number of initial state probabilities is simply the number of possible states ("components")
+                num_initial_state_probabilities = num_components
+
+                # Each state is only connected to itself and its immediate follower; no skip connections
+                # are allowed, the graph is otherwise acyclic.
+                # The number of free parameters for the transition probabilities is then determined as follows:
+                # Since the probabilities for leaving a node must sum to 1, the probability of moving
+                # to the follower is directly determined by the probability to stay, resulting in N
+                # parameters for the N states. However, the last state has no follower, thus the number
+                # of parameters is reduced by one.
+                # If the model would be allowed to "skip" over connections, essentially allowing connections
+                # to any state (even earlier ones), the number of parameters would be N*(N-1), determined
+                # by (N-1) free transition probabilities for each of the N states.
+                # If no backwards connections are allowed (the lower left triangle of the transition matrix is zero)
+                # the number of free parameters would be N*(N-1)/2.
+                num_transition_probabilities = num_components - 1
+
+                # The number of emission probabilities is the number of means and covariances.
+                # Since the matrix is configured to be diagonal in the GaussianHMM constructor,
+                # there only is the squared variance.
+                num_emission_probabilities = num_components * num_features * 2
+
+                num_params = num_initial_state_probabilities + num_transition_probabilities + num_emission_probabilities
+                bic = -2 * log_likelihood + num_params * np.log(num_samples)
+
                 # Occam's razor: We try smaller models first and check for a
-                # strictly smaller BIC, this will prefer smaller models in case of a draw.
-                if best_bic < bic:
+                # strictly smaller BIC. This will prefer smaller models in case of a draw.
+                if bic < best_bic:
                     best_bic, best_model = bic, model
             return best_model
         except:
@@ -106,7 +130,7 @@ class SelectorDIC(ModelSelector):
 
     def select(self):
         try:
-            best_dic, best_model = float("-inf"), 1
+            best_dic, best_model = float("-inf"), None
             for num_components in range(self.min_n_components, self.max_n_components + 1):
                 model = self.base_model(num_components)  # type: GaussianHMM
 
@@ -118,7 +142,7 @@ class SelectorDIC(ModelSelector):
 
                 dic = log_likelihood - np.sum(log_likelihoods) / (len(log_likelihoods) - 1)
 
-                if best_dic < dic:
+                if dic > best_dic:
                     best_dic, best_model = dic, model
             return best_model
         except:

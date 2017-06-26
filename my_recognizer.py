@@ -3,7 +3,7 @@ import heapq
 from asl_data import SinglesData
 
 
-def recognize(models: dict, test_set: SinglesData):
+def recognize(models: dict, test_set: SinglesData, beam_size: int=1):
     """ Recognize test word sequences from word models set
 
    :param models: dict of trained models
@@ -31,6 +31,8 @@ def recognize(models: dict, test_set: SinglesData):
             log_likelihoods[candidate_word] = log_likelihood
         probabilities.append(log_likelihoods)
 
+    # todo: Maybe build a table of step-wise highest probability and use it for fast lookups. https://youtu.be/0dVUfYF8ko0?t=74
+
     def get_best_log_likelihood(sequence=[], sequence_log_likelihood=0, beam_size=3):
         if len(sequence) == len(probabilities):
             return sequence, sequence_log_likelihood
@@ -44,5 +46,5 @@ def recognize(models: dict, test_set: SinglesData):
                 best_seq, best_log_l = new_seq, new_log_l
         return best_seq, best_log_l
 
-    guesses, total_log_likelihood = get_best_log_likelihood(beam_size=1)
+    guesses, total_log_likelihood = get_best_log_likelihood(beam_size=beam_size)
     return probabilities, guesses
